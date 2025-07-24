@@ -1,0 +1,216 @@
+const express = require("express");
+const cors = require("cors");
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const admin = require("firebase-admin");
+const serviceAccount = require("./serviceAccount.json");
+require("dotenv").config();
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
+const app = express();
+const port = process.env.PORT || 5000;
+
+app.use(cors(["https://co2bd-d6f4f.web.app/"]))
+app.use(express.json())
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+})
+
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.g8eto.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+const client = new MongoClient(uri, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
+});
+
+const verifyToken = async (req, res, next) => {
+    const authHeader = req.headers?.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).send({ message: "unauthorized access" })
+    }
+    // console.log(authHeader)
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.user = decoded
+        // console.log('decode Token', decoded);
+        next()
+    }
+    catch (error) {
+        return res.status(401).send({ message: "unauthorized access" })
+    }
+};
+
+const verifyEmail = async (req, res, next) => {
+    const userEmail = req.params.email;
+    const adminEmail = req.user.email;
+    // console.log(userEmail, adminEmail)
+    if (userEmail !== adminEmail) {
+        return res.status(403).send({ message: "forbidden access" })
+    }
+    next()
+}
+
+async function run() {
+    try {
+        // Connect the client to the server	(optional starting in v4.7)
+        // await client.connect();
+
+        const db = client.db("co2bd");
+        const eventsCollection = db.collection("events");
+        const joinedEventCollection = db.collection("joinedEvents");
+
+        // get all events
+        // nice
+        app.get("/events", async (req, res) => {
+            const { queryDate, title, filter, limit = 5, page = 1 } = req.query;
+            // do query
+            const query = {};
+
+            if (title) {
+                query.title = { $regex: title, $options: 'i' }
+            };
+
+            if (filter) {
+                query.type = filter
+            }
+
+            if (queryDate) {
+                const [month, date, year] = queryDate.split("/").map(Number);
+                const utcMillis = Date.UTC(year, month - 1, date);
+
+                query.timeStamp = { $gte: utcMillis }
+            }
+
+            // do sort
+            const sort = {
+                timeStamp: 1
+            };
+            // console.log(title)
+            const eventsCount = await eventsCollection.countDocuments(query);
+
+            // work for pagination
+            const limitNum = Number(limit);
+            const totalPages = Math.ceil(eventsCount / limitNum) || 1;
+            const pageNum = Number(page);
+            // const skip = limitNum * (pageNum - 1);
+            const safePage = pageNum > totalPages ? 1 : pageNum;
+            const skip = (safePage - 1) * limitNum;
+
+            const events = await eventsCollection.find(query).sort(sort)
+                .skip(skip)
+                .limit(limitNum)
+                .toArray();
+            // console.log(events)
+            const result = { eventsCount, events, totalPages, currentPage: safePage };
+            res.send(result)
+        })
+
+        // get email based events
+        app.get("/events/:email", verifyToken, verifyEmail, async (req, res) => {
+            const { email } = req.params;
+            const query = { email };
+            const result = await eventsCollection.find(query).toArray();
+            res.send(result)
+        })
+
+        // get event data
+        app.get("/event/:id", verifyToken, async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) };
+            const result = await eventsCollection.findOne(query);
+            res.send(result)
+        })
+
+        // create/post event API
+        app.post("/event", verifyToken, async (req, res) => {
+            const eventData = req.body;
+            const [month, day, year] = eventData.eventDate.split("/").map(Number);
+            const newData = {
+                ...eventData,
+                timeStamp: Date.UTC(year, month - 1, day, 0, 0, 0)
+            };
+
+            const result = await eventsCollection.insertOne(newData);
+            res.send(result)
+        })
+
+        // update an event
+        app.put("/event/:id", verifyToken, async (req, res) => {
+            const event = req.body;
+            const { id } = req.params;
+
+            if (event.email !== req.user.email) {
+                return res.status(403).send({ message: "forbidden access" })
+            }
+
+            const query = { _id: new ObjectId(id) };
+            const options = { upsert: true };
+            const { _id, ...restEventProperties } = event;
+            const [month, day, year] = event.eventDate.split("/").map(Number);
+
+            const updatedDoc = {
+                $set: {
+                    ...restEventProperties,
+                    timeStamp: Date.UTC(year, month - 1, day, 0, 0, 0)
+                }
+            };
+            const result = await eventsCollection.updateOne(query, updatedDoc, options);
+            res.send(result)
+        })
+
+        // joined events get api
+        app.get("/joined-events", verifyToken, async (req, res) => {
+            const { email } = req.query;
+            if (email !== req.user.email) {
+                return res.status(403).send({ message: "forbidden access" })
+            }
+            const query = { user_email: email };
+            const result = await joinedEventCollection.find(query).sort({ timeStamp: 1 }).toArray();
+            res.send(result)
+        })
+
+        app.post("/join-event", verifyToken, async (req, res) => {
+            const event = req.body;
+            const result = await joinedEventCollection.insertOne(event);
+            res.send(result)
+        });
+
+        app.post('/create-payment-intent', verifyToken, async (req, res) => {
+            const amount = 1000;
+            try {
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount,
+                    currency: "usd",
+                    payment_method_types: ["card"]
+                });
+                res.send({ clientSecret: paymentIntent.client_secret })
+            }
+            catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        })
+
+        // Send a ping to confirm a successful connection
+        // await client.db("admin").command({ ping: 1 });
+        // console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    } finally {
+        // Ensures that the client will close when you finish/error
+        // await client.close();
+    }
+}
+run().catch(console.dir);
+
+
+app.get("/", (req, res) => {
+    res.send("This is co2BD server side")
+})
+
+app.listen(port, () => {
+    // console.log(`server is running on port: ${port}`)
+})
