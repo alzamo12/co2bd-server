@@ -66,6 +66,7 @@ async function run() {
         const eventsCollection = db.collection("events");
         const joinedEventCollection = db.collection("joinedEvents");
         const commentsCollection = db.collection("comments");
+        const likesCollection = db.collection("likes");
 
         // get all events
         // nice
@@ -248,6 +249,47 @@ async function run() {
             const result = { comments, commentsCount };
             res.send(result)
         })
+
+        // likes related api's
+
+        // like post api
+        app.post("/likes", async (req, res) => {
+            const data = req.body;
+            // console.log(data)
+            const likeData = {
+                ...data,
+                likedDate: new Date()
+            };
+
+            const query = {
+                targe_id: data.target_id,
+                user_email: data.user_email,
+                target_type: data.target_type
+            };
+            const findLike = await likesCollection.findOne(query);
+            if (findLike) {
+                return res.status(409).send({ message: "you have already liked this post" })
+            }
+
+            const result = await likesCollection.insertOne(likeData);
+            res.send(result)
+        })
+
+        app.get("/like", async (req, res) => {
+            const { targetId, userEmail } = req.query;
+            const query = {};
+
+            if (targetId) {
+                query.target_id = targetId
+            }
+            if (userEmail) {
+                query.user_email = userEmail
+            }
+            // console.log(query)
+            const result = await likesCollection.findOne(query);
+            res.send(result)
+        })
+
 
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
