@@ -290,14 +290,23 @@ async function run() {
             res.send(result)
         });
 
-        app.get("/eventLikeCount/:eventId", async(req, res) => {
-            const {eventId} = req.params;
+        // remove like and delete like api
+        app.delete("/like/:id", async(req, res) => {
+            const {id} = req.params;
+            const query = {_id: new ObjectId(id)};
+            // console.log(query)
+            const result = await likesCollection.deleteOne(query);
+            res.send(result)
+        })
+
+        app.get("/eventLikeCount/:eventId", async (req, res) => {
+            const { eventId } = req.params;
             const query = {
                 target_id: eventId
             }
             const eventLikeCount = await likesCollection.countDocuments(query);
             res.send(eventLikeCount)
-        })
+        });
 
 
         // Send a ping to confirm a successful connection
