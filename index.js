@@ -65,6 +65,7 @@ async function run() {
         const db = client.db("co2bd");
         const eventsCollection = db.collection("events");
         const joinedEventCollection = db.collection("joinedEvents");
+        const commentsCollection = db.collection("comments");
 
         // get all events
         // nice
@@ -203,6 +204,49 @@ async function run() {
             catch (error) {
                 res.status(500).json({ error: error.message });
             }
+        });
+
+        // comments related api's
+
+        // post a comments
+        app.post("/comments", verifyToken, async (req, res) => {
+            const { text, rating, eventId } = req.body;
+            const user = req.user;
+            // console.log(user)
+            const commentData = {
+                text,
+                rating,
+                eventId,
+                userEmail: user?.email,
+                userName: user?.name,
+                userPhoto: user?.picture,
+                commentedDate: new Date()
+            };
+
+            const result = await commentsCollection.insertOne(commentData);
+            res.send(result)
+        })
+
+        // get all comments
+        app.get("/comments", async (req, res) => {
+            const { eventId, page, limit } = req.query;
+            const query = {};
+
+            if (eventId) {
+                query.eventId = eventId
+            };
+            const pageCount = parseInt(page);
+            const limitCount = parseInt(limit);
+            const skip = limitCount * (pageCount - 1);
+
+            const comments = await commentsCollection
+                .find(query)
+                .skip(skip)
+                .limit(limitCount)
+                .toArray();
+            const commentsCount = await commentsCollection.countDocuments(query);
+            const result = { comments, commentsCount };
+            res.send(result)
         })
 
         // Send a ping to confirm a successful connection
