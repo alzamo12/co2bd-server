@@ -288,6 +288,15 @@ async function run() {
             // console.log(query)
             const result = await likesCollection.findOne(query);
             res.send(result)
+        });
+
+        app.get("/eventLikeCount/:eventId", async(req, res) => {
+            const {eventId} = req.params;
+            const query = {
+                target_id: eventId
+            }
+            const eventLikeCount = await likesCollection.countDocuments(query);
+            res.send(eventLikeCount)
         })
 
 
