@@ -67,6 +67,7 @@ async function run() {
         const joinedEventCollection = db.collection("joinedEvents");
         const commentsCollection = db.collection("comments");
         const likesCollection = db.collection("likes");
+        const notificationsCollection = db.collection("notifications");
 
         // get all events
         // nice
@@ -291,9 +292,9 @@ async function run() {
         });
 
         // remove like and delete like api
-        app.delete("/like/:id", async(req, res) => {
-            const {id} = req.params;
-            const query = {_id: new ObjectId(id)};
+        app.delete("/like/:id", async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) };
             // console.log(query)
             const result = await likesCollection.deleteOne(query);
             res.send(result)
@@ -307,6 +308,89 @@ async function run() {
             const eventLikeCount = await likesCollection.countDocuments(query);
             res.send(eventLikeCount)
         });
+
+
+        // notification related api's
+        // notification insert api
+        app.post("/notification", async (req, res) => {
+            const { receiverId, senderId, type, typeId, message } = req.body;
+
+            const newNotification = {
+                receiverId,
+                senderId,
+                type,
+                typeId,
+                message,
+                seen: false,
+                createdAt: new Date()
+            };
+
+            const result = await notificationsCollection.insertOne(newNotification);
+            res.send(result);
+        });
+
+        // get a specific user notification get api
+        app.get("/notifications/:userId", async (req, res) => {
+            const { userId } = req.params;
+            const { limit = 10, page = 1 } = req.query;
+
+            const query = { receiverId: userId };
+
+            const options = {
+                sort: { createdAt: -1 },
+                skip: parseInt(limit) * (parseInt(page) - 1),
+                limit: parseInt(limit)
+            };
+
+            const notifications = await notificationsCollection.find(query, options).toArray();
+            const notificationsCount = await notificationsCollection.countDocuments(query);
+            const result = { notifications, notificationsCount };
+            res.send(result)
+        });
+
+        // get unread count notification api
+        app.get("/notification/unread-count/:userId", async (req, res) => {
+            const { userId } = req.params;
+            const query = {
+                receiverId: userId,
+                seen: false
+            };
+            const result = await notificationsCollection.countDocuments(query);
+            res.send({ result })
+        })
+
+        // set seen notification patch api
+        app.patch("/notification/mark-as-read/:id", async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    seen: true
+                }
+            };
+
+            const result = await notificationsCollection.updateOne(query, updatedDoc);
+            res.send(result)
+        })
+
+        app.patch('/notifications/:userId', async (req, res) => {
+            const { userId } = req.params;
+            const query = {
+                receiverId: userId,
+                seen: false
+            };
+
+            const updatedDoc = {
+                $set: {
+                    seen: true
+                }
+            };
+
+            const result = await notificationsCollection.updateMany(query, updatedDoc);
+            res.send(result)
+        })
+
+
 
 
         // Send a ping to confirm a successful connection
