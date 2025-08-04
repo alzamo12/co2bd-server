@@ -68,6 +68,7 @@ async function run() {
         const commentsCollection = db.collection("comments");
         const likesCollection = db.collection("likes");
         const notificationsCollection = db.collection("notifications");
+        const usersCollection = db.collection("users");
 
         // get all events
         // nice
@@ -129,6 +130,16 @@ async function run() {
             const query = { email };
             const result = await eventsCollection.find(query).toArray();
             res.send(result)
+        })
+
+        app.get("/created-events-count/:email", async(req, res) => {
+            const {email} = req.params;
+            if(!email){
+                return res.status(401).send({message: "unauthorized access"})
+            }
+
+            const result = await eventsCollection.countDocuments({email: email})
+            res.send({eventsCount: result})
         })
 
         // get event data
@@ -388,10 +399,58 @@ async function run() {
 
             const result = await notificationsCollection.updateMany(query, updatedDoc);
             res.send(result)
+        });
+
+        // user related API
+        // user post api
+        app.patch("/user", verifyToken, async (req, res) => {
+            const user = req.body;
+            const query = { email: user?.email }
+            const isUser = await usersCollection.findOne(query);
+
+            // do something if the user is true
+            if (isUser) {
+                const updatedDoc = {
+                    $set: {
+                        lastLogin: new Date()
+                    }
+                };
+
+                const result = await usersCollection.updateOne(query, updatedDoc);
+                return res.status(409).send({ message: "User already exists" })
+            }
+
+            // task if the user is not true
+            const userData = {
+                ...user,
+                createdAt: new Date(),
+                lastLogin: new Date(),
+                role: 'user'
+            };
+
+            const result = await usersCollection.insertOne(userData);
+            res.send(result)
+        })
+
+        app.get("/users", async (req, res) => {
+            const result = await usersCollection.find().toArray();
+            res.send(result)
+        });
+
+        app.get("/user-role/:email", async (req, res) => {
+            const { email } = req.params;
+            const query = { email: email }
+            const result = await usersCollection.findOne(query);
+            const role = { role: result?.role };
+            res.send(role)
         })
 
 
-
+        // usersCollection.updateOne({email: 'rafiqulislam4969@gmail.com'},{
+        //     $set: {
+        //         role: 'admin'
+        //     }
+        // })
 
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
