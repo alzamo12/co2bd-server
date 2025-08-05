@@ -55,7 +55,9 @@ const verifyEmail = async (req, res, next) => {
         return res.status(403).send({ message: "forbidden access" })
     }
     next()
-}
+};
+
+
 
 async function run() {
     try {
@@ -69,6 +71,16 @@ async function run() {
         const likesCollection = db.collection("likes");
         const notificationsCollection = db.collection("notifications");
         const usersCollection = db.collection("users");
+
+        const verifyAdmin = async (req, res, next) => {
+            const email = req?.user?.email;
+            const result = await usersCollection.findOne({ email });
+            if (result?.role !== 'admin') {
+                return res.status(403).send({ message: 'Forbidden Access' });
+            }
+
+            next()
+        }
 
         // get all events
         // nice
@@ -132,14 +144,14 @@ async function run() {
             res.send(result)
         })
 
-        app.get("/created-events-count/:email", async(req, res) => {
-            const {email} = req.params;
-            if(!email){
-                return res.status(401).send({message: "unauthorized access"})
+        app.get("/created-events-count/:email", async (req, res) => {
+            const { email } = req.params;
+            if (!email) {
+                return res.status(401).send({ message: "unauthorized access" })
             }
 
-            const result = await eventsCollection.countDocuments({email: email})
-            res.send({eventsCount: result})
+            const result = await eventsCollection.countDocuments({ email: email })
+            res.send({ eventsCount: result })
         })
 
         // get event data
@@ -432,7 +444,7 @@ async function run() {
             res.send(result)
         })
 
-        app.get("/users", async (req, res) => {
+        app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result)
         });
@@ -445,15 +457,15 @@ async function run() {
             res.send(role)
         })
 
-        app.patch("/make-admin/:email", async(req, res) => {
-            const {email} = req.params;
-            const query = {email: email};
+        app.patch("/make-admin/:email", verifyToken, verifyAdmin, async (req, res) => {
+            const { email } = req.params;
+            const query = { email: email };
             const updatedDoc = {
                 $set: {
                     role: "admin"
                 }
             };
-            const result = await  usersCollection.updateOne(query, updatedDoc);
+            const result = await usersCollection.updateOne(query, updatedDoc);
             res.send(result)
         })
 
