@@ -445,6 +445,18 @@ async function run() {
             res.send(role)
         })
 
+        app.patch("/make-admin/:email", async(req, res) => {
+            const {email} = req.params;
+            const query = {email: email};
+            const updatedDoc = {
+                $set: {
+                    role: "admin"
+                }
+            };
+            const result = await  usersCollection.updateOne(query, updatedDoc);
+            res.send(result)
+        })
+
 
         // usersCollection.updateOne({email: 'rafiqulislam4969@gmail.com'},{
         //     $set: {
