@@ -212,9 +212,33 @@ async function run() {
 
         app.post("/join-event", verifyToken, async (req, res) => {
             const event = req.body;
+
+            const query = {
+                eventId: event?.eventId,
+                user_email: event?.user_email
+            };
+            const joinedEvent = await joinedEventCollection.findOne(query);
+            if (joinedEvent) {
+                return res.status(409).send({
+                    success: false,
+                    message: "User has already joined the event"
+                })
+            };
+
             const result = await joinedEventCollection.insertOne(event);
             res.send(result)
         });
+
+        app.get("/is-event-joined", async (req, res) => {
+            const { email, eventId } = req.query;
+
+            if (!email || !eventId) {
+                return res.status(400).send({ message: "Missing email or eventId" })
+            };
+
+            const event = await joinedEventCollection.findOne({ user_email: email, eventId });
+            res.send({ joined: !!event });
+        })
 
         app.post('/create-payment-intent', verifyToken, async (req, res) => {
             const amount = 1000;
@@ -232,7 +256,6 @@ async function run() {
         });
 
         // comments related api's
-
         // post a comments
         app.post("/comments", verifyToken, async (req, res) => {
             const { text, rating, eventId } = req.body;
@@ -469,6 +492,8 @@ async function run() {
             res.send(result)
         })
 
+
+        // await joinedEventCollection.deleteMany()
 
         // usersCollection.updateOne({email: 'rafiqulislam4969@gmail.com'},{
         //     $set: {
